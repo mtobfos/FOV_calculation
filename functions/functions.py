@@ -5,10 +5,18 @@ import numpy as np
 def read_data():
     """Import FOV data saved in npy files. data muss have the structure
     [azimuth, zenith, radiance] """
-
     data = np.load('data/data.npy')
     return data
 
+def select_values(data, config):
+    """Select the values from the data matrix"""
+
+    radianc = data[2][config['channel'], config['wavelength'], :]
+    radiance = radianc / radianc.max()
+    zen = data[1]
+    azim = data[0]
+
+    return azim, zen, radiance
 
 def plot_fov(data, config, add_points=False):
     """Plot the FOV measured in a contour plot """
@@ -16,10 +24,7 @@ def plot_fov(data, config, add_points=False):
     delta = config['delta']
     name = 'corrected_FOV'
 
-    radianc = data[2][config['channel'], config['wavelength'], :]
-    radiance = radianc / radianc.max()
-    zen = data[1]
-    azim = data[0]
+    azim, zen, radiance = select_values(data, config)
 
     # parameter of plot
     zeni_fib = 12 # zen_fib
@@ -31,8 +36,6 @@ def plot_fov(data, config, add_points=False):
     # plot
     cmap = 'nipy_spectral'
     levels = np.arange(0, radiance.max(), 1/30)
-
-    #fig, ax = plt.subplots(subplot_kw=dict(projection='polar'))
 
     plt.tricontourf(azim, zen, radiance, cmap=cmap, levels=levels)
     plt.ylim(ylim_min, ylim_max)
@@ -59,3 +62,30 @@ def plot_fov(data, config, add_points=False):
     plt.savefig('results/{}.png'.format(name), dpi=300)
     plt.show()
     plt.close()
+
+def plot_surf(data, config):
+
+    azim, zen, radiance = select_values(data, config)
+
+    x = np.cos(azim) * np.sin(zen)
+    y = np.sin(azim) * np.sin(zen)
+
+    fig = plt.figure(figsize=plt.figaspect(0.5))
+    ax = fig.add_subplot(1, 1, 1, projection='3d')
+
+    ax.plot_trisurf(x, y, radiance,
+                    cmap='nipy_spectral', edgecolor='none');
+    ax.set_ylim([-0.2, 0.5])
+    ax.set_xlim([-0.2, 0.5])
+
+    plt.show()
+
+def save_data(data, config):
+    """ save the selected data into a txt file """
+    azim, zen, radiance = select_values(data, config)
+    datei = np.zeros([len(zen), 3])
+
+    for i in np.arange(len(zen)):
+        datei[i] = azim[i], zen[i], radiance[i]
+
+    np.savetxt('datei.txt', datei, fmt='%.3f', delimiter=',', header='azimuth, zenith, radiance')

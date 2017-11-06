@@ -12,8 +12,9 @@ config['delta'] = 15
 # run programm
 
 data = fov.read_data()
-print('Data loaded, shape:', data.shape)
+print('Data loaded, shape:', data[2].shape)
 
-fov.plot_fov(data, config)
-
+#fov.plot_fov(data, config)
+#fov.plot_surf(data, config)
+#fov.save_data(data, config)
 print('listo')
