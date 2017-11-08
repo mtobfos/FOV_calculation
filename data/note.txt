@@ -1,1 +1,1 @@
-Here add the data.npy files
+Here add the data files using the corresponding channel index and folder

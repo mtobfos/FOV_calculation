@@ -16,5 +16,5 @@ print('Data loaded, shape:', data[2].shape)
 
 #fov.plot_fov(data, config)
 #fov.plot_surf(data, config)
-#fov.save_data(data, config)
+fov.save_data(data, config)
 print('listo')
