@@ -1,1 +1,2 @@
-Here add the data files using the corresponding channel index and folder
+
+Here add the data files using the corresponding channel index and folder following the example folder.

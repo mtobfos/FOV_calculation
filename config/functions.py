@@ -2,15 +2,23 @@ import datetime
 import glob
 import h5py
 import matplotlib.pyplot as plt
+import matplotlib
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 import pandas as pd
-
+from scipy.interpolate import interp1d
 
 
 def data_structure(config):
-    """ Arrange the data into a common data structure for the analysis"""
+    """ Arrange the data into a common data structure for the analysis
+    return an array of form [positions, radiance]
+
+    positions = [azimuth, zenith]
+    radiance = [channel, wavelength]
+
+
+    """
     cwd = os.getcwd()
     files_h5 = sorted(glob.glob(cwd + '/data/{:03d}/arranged_data/*.h5'.format(config['channel'])))
 
@@ -54,7 +62,7 @@ def files_data_dir(config):
 
 
 def files_pos_dir(config):
-    """ """
+    """load path to position files """
     cwd = os.getcwd()
     return sorted(glob.glob(cwd + '/data/{:03d}/positions/*.txt'.format(config['channel'])))
 
@@ -262,20 +270,145 @@ def plot_fov(data, config, add_points=False):
     plt.show()
     plt.close()
 
+
 def plot_surf(data, config):
 
     azim, zen, radiance = select_values(data, config)
 
+    azim = np.radians(azim)
+    zen = np.radians(zen)
+
     x = np.cos(azim) * np.sin(zen)
     y = np.sin(azim) * np.sin(zen)
+
+    triangles = matplotlib.tri.Triangulation(x, y, triangles=None, mask=None)
 
     fig = plt.figure(figsize=plt.figaspect(0.5))
     ax = fig.add_subplot(1, 1, 1, projection='3d')
 
-    ax.plot_trisurf(x, y, radiance,
+    ax.plot_trisurf(triangles, radiance,
                     cmap='nipy_spectral', edgecolor='none');
-    ax.set_ylim([-0.2, 0.5])
-    ax.set_xlim([-0.2, 0.5])
+    # ax.set_xlim([0.1, 0.4])
+    # ax.set_ylim([-0.2, 0.2])
+
+    plt.show()
+
+# %%%%%%%%%%%%%%%% DATA ANALYSIS %%%%%%%%%%%%%%%%%%%%%%%%
+
+
+def FOV(function, first, last, tol=0.01, value=0.5):
+    """ Calcule the FOV of a function with two minimum values"""
+    ini = int(first)
+    fin = int(last)
+
+    val = []
+    for i in np.arange(ini, fin, tol):
+        if (value - tol) <= function(i) <= (value + tol):
+            val = np.append(val, i)
+        else:
+            pass
+    # Separate range to determine the max un min value in the degree axis
+    fov_min = []
+    fov_max = []
+
+    for i in range(len(val)):
+        if val[i] < ((ini + fin) / 2):
+            fov_min = np.append(fov_min, val[i])
+        else:
+            fov_max = np.append(fov_max, val[i])
+
+    fov = np.mean(fov_max) - np.mean(fov_min)
+    pos = [np.mean(fov_min), np.mean(fov_max)]
+
+    return fov, pos
+
+def FOV_plot_azim(data, config):
+    """Calculate and plot the FOV for the azimuth plane"""
+    # find the maximum of radiance
+    peak = np.where(data[1][config['channel'], :, :] == data[1][config['channel'], :, :].max())
+    peak_a, peak_z = data[0][peak[1][0]][0], data[0][peak[1][0]][1]
+
+    # look for the angular coordenated
+    print('Maximum of radiance in {:.2f}ºA {:.2f}ºZ '.format(peak_a, peak_z))
+
+    # Look for maximum value in the FOV azimuth profile
+    ind = []
+    for i in np.arange(len(data[0])):
+        if data[0][i][1] == peak_z:
+            ind.append(i)
+
+    rad_max = data[1][config['channel'], config['wavelength'], ind[0]:ind[-1]] / \
+            data[1][config['channel'], config['wavelength'], ind[0]:ind[-1]].max()
+
+    azim = np.zeros(len(ind))
+    i = 0
+    for val in ind:
+        azim[i] = data[0][val][0]
+        i += 1
+    azim = azim[:-1]
+
+    # interpolate data
+    rad_az_interp = interp1d(azim, rad_max, kind='cubic')
+    azim_new = sorted(np.linspace(azim[0], azim[-1], num=100))
+
+    # find the values equal to 0.5
+    fov_val, ind_f = FOV(rad_az_interp, azim_new[0], azim_new[-1], tol=0.01)
+
+    # plot data
+    fig, ax = plt.subplots()
+    ax.plot(azim, rad_max, '*')
+    ax.set_title('Angular Response channel {} azimuth'.format(config['channel']))
+    ax.set_xlabel('Azimuth[1]')
+    ax.set_ylabel('Normalized Radiance')
+    ax.legend(['FOV={:.2f}º'.format(fov_val)])
+    ax.plot([0, 0], [0, 1], 'r--')
+    ax.plot(azim_new, rad_az_interp(azim_new))
+    ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
+
+    plt.show()
+
+def FOV_plot_zen(data, config):
+    """Calculate and plot the FOV for the azimuth plane"""
+    # find the maximum of radiance
+    peak = np.where(data[1][config['channel'], :, :] == data[1][config['channel'], :, :].max())
+    peak_a, peak_z = data[0][peak[1][0]][0], data[0][peak[1][0]][1]
+
+    # look for the angular coordenated
+    print('Maximum of radiance in {:.2f}ºA {:.2f}ºZ '.format(peak_a, peak_z))
+
+    # Look for maximum value in the FOV azimuth profile
+    ind = []
+    tol = 0.25
+    for i in np.arange(len(data[0])):
+        if peak_a - tol < data[0][i][0] <= peak_a + tol:
+            ind.append(i)
+
+    rad_max = data[1][config['channel'], config['wavelength'], ind] / \
+            data[1][config['channel'], config['wavelength'], ind].max()
+
+    zen = np.zeros(len(ind))
+    i = 0
+    for val in ind:
+        zen[i] = data[0][val][1]
+        i += 1
+
+    # interpolate data
+    rad_az_interp = interp1d(zen, rad_max, kind='cubic')
+    zen_new = sorted(np.linspace(zen[0], zen[-1], num=100))
+
+    # find the values equal to 0.5
+    fov_val, ind_f = FOV(rad_az_interp, zen_new[0], zen_new[-1], tol=0.01)
+
+    # plot data
+    fig, ax = plt.subplots()
+    ax.plot(zen, rad_max, '*')
+    ax.set_title('Angular Response channel {} zenith'.format(config['channel']))
+    ax.set_xlabel('Azimuth[1]')
+    ax.set_ylabel('Normalized Radiance')
+    ax.legend(['FOV={:.2f}º'.format(fov_val)])
+    ax.plot([peak_z, peak_z], [0, 1], 'r--')
+    ax.plot(zen_new, rad_az_interp(zen_new))
+    ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
 
     plt.show()
 
@@ -292,4 +425,4 @@ def plot_surf(data, config):
 #
 #     print(datos.head())
 #
-#     datos.to_excel('datei')
+#     datos.to_excel('datei.xlsx')
