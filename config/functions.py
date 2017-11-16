@@ -2,12 +2,13 @@ import datetime
 import glob
 import h5py
 import matplotlib.pyplot as plt
-import matplotlib
 from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 import pandas as pd
+from scipy.interpolate import Rbf
 from scipy.interpolate import interp1d
+from scipy.interpolate import griddata
 
 
 def data_structure(config):
@@ -271,27 +272,22 @@ def plot_fov(data, config, add_points=False):
     plt.close()
 
 
-def plot_surf(data, config):
-
+def plot_surf(data, config, azimuth=0, zenith=30):
+    """ Plot the FOV into a surface plot """
     azim, zen, radiance = select_values(data, config)
 
-    azim = np.radians(azim)
-    zen = np.radians(zen)
+    fig = plt.figure(figsize=(12, 9))
 
-    x = np.cos(azim) * np.sin(zen)
-    y = np.sin(azim) * np.sin(zen)
-
-    triangles = matplotlib.tri.Triangulation(x, y, triangles=None, mask=None)
-
-    fig = plt.figure(figsize=plt.figaspect(0.5))
     ax = fig.add_subplot(1, 1, 1, projection='3d')
-
-    ax.plot_trisurf(triangles, radiance,
-                    cmap='nipy_spectral', edgecolor='none');
-    # ax.set_xlim([0.1, 0.4])
-    # ax.set_ylim([-0.2, 0.2])
-
+    cmap = 'nipy_spectral'
+    ax.plot_trisurf(azim, zen, radiance, cmap=cmap)
+    ax.set_title('3D FOV Channel {}, {}nm'.format(config['channel'], config['wavelength']), fontsize=14)
+    ax.set_xlabel('azimuth[1]', fontsize=12)
+    ax.set_ylabel('zenith[1]', fontsize=12)
+    ax.set_zlabel('normalized radiance', fontsize=12)
+    ax.view_init(zenith, azimuth)
     plt.show()
+
 
 # %%%%%%%%%%%%%%%% DATA ANALYSIS %%%%%%%%%%%%%%%%%%%%%%%%
 
@@ -321,6 +317,7 @@ def FOV(function, first, last, tol=0.01, value=0.5):
     pos = [np.mean(fov_min), np.mean(fov_max)]
 
     return fov, pos
+
 
 def FOV_plot_azim(data, config):
     """Calculate and plot the FOV for the azimuth plane"""
@@ -356,16 +353,17 @@ def FOV_plot_azim(data, config):
 
     # plot data
     fig, ax = plt.subplots()
-    ax.plot(azim, rad_max, '*')
+    ax.plot(azim, rad_max, 'b*')
     ax.set_title('Angular Response channel {} azimuth'.format(config['channel']))
-    ax.set_xlabel('Azimuth[1]')
+    ax.set_xlabel('Azimuth Angle[1]')
     ax.set_ylabel('Normalized Radiance')
     ax.legend(['FOV={:.2f}º'.format(fov_val)])
     ax.plot([0, 0], [0, 1], 'r--')
-    ax.plot(azim_new, rad_az_interp(azim_new))
+    ax.plot(azim_new, rad_az_interp(azim_new), 'b-')
     ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
 
     plt.show()
+
 
 def FOV_plot_zen(data, config):
     """Calculate and plot the FOV for the azimuth plane"""
@@ -401,13 +399,13 @@ def FOV_plot_zen(data, config):
 
     # plot data
     fig, ax = plt.subplots()
-    ax.plot(zen, rad_max, '*')
+    ax.plot(zen, rad_max, 'b*')
     ax.set_title('Angular Response channel {} zenith'.format(config['channel']))
-    ax.set_xlabel('Azimuth[1]')
+    ax.set_xlabel('Zenith Angle[1]')
     ax.set_ylabel('Normalized Radiance')
     ax.legend(['FOV={:.2f}º'.format(fov_val)])
     ax.plot([peak_z, peak_z], [0, 1], 'r--')
-    ax.plot(zen_new, rad_az_interp(zen_new))
+    ax.plot(zen_new, rad_az_interp(zen_new), 'b-')
     ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
 
     plt.show()
