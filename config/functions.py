@@ -2,23 +2,19 @@ import datetime
 import glob
 import h5py
 import matplotlib.pyplot as plt
-from mpl_toolkits.mplot3d import Axes3D
 import numpy as np
 import os
 import pandas as pd
-from scipy.interpolate import Rbf
-from scipy.interpolate import interp1d
-from scipy.interpolate import griddata
+from scipy.signal import savgol_filter
+from scipy import interpolate
 
 
 def data_structure(config):
     """ Arrange the data into a common data structure for the analysis
     return an array of form [positions, radiance]
 
-    positions = [azimuth, zenith]
-    radiance = [channel, wavelength]
-
-
+    positions = [azimuths, zeniths]
+    radiance = [channels, wavelengths]
     """
     cwd = os.getcwd()
     files_h5 = sorted(glob.glob(cwd + '/data/{:03d}/arranged_data/*.h5'.format(config['channel'])))
@@ -26,7 +22,6 @@ def data_structure(config):
     # Load data into notebook
     key = 'data'
     dataray = np.zeros([113, 992, len(files_h5)])
-    time_meas = []
 
     for j in np.arange(0, len(files_h5)):
         # load a file
@@ -39,7 +34,7 @@ def data_structure(config):
 
 
 def loadhdf5file(file_h5, key='data'):
-    """Read contains of HDF5 file saved with dat2hdf5_mudis function"""
+    """Read contains of HDF5 file saved with save2hdf5 function"""
 
     with h5py.File(file_h5, 'r') as data:
         # Add datasets to dictionary
@@ -83,8 +78,8 @@ def save2hdf5(files, config, init_file=0, fin_file=3, step=1, expo='700'):
     alignment = pd.read_table(
         'config/Alignment_Lab_UV_20120822.dat',
         sep='\s+',
-        names=['Channel Number', 'Azimuth', 'Zenith', 'pixel', 'pixel',
-               'pixel'], skiprows=1)
+        names=['Channel Number', 'Azimuth', 'Zenith', 'pixel1', 'pixel2',
+               'pixel3'], skiprows=1)
 
     # Create the directory to save the results
     os.makedirs(os.path.dirname('data/{:03d}/arranged_data/'.format(config['channel'])), exist_ok=True)
@@ -227,13 +222,11 @@ def select_values(data, config):
     return azim, zen, radiance
 
 
-def plot_fov(data, config, add_points=False):
+def plot_fov(azim, zen, radiance, config, add_points=False):
     """Plot the FOV measured in a contour plot """
 
     delta = config['delta']
     name = 'corrected_FOV'
-
-    azim, zen, radiance = select_values(data, config)
 
     # parameter of plot
     zeni_fib = 12 # zen_fib
@@ -286,14 +279,14 @@ def plot_surf(data, config, azimuth=0, zenith=30):
     ax.set_ylabel('zenith[1]', fontsize=12)
     ax.set_zlabel('normalized radiance', fontsize=12)
     ax.view_init(zenith, azimuth)
+    ax.scatter(azim, zen, radiance, s=2)
     plt.show()
 
 
 # %%%%%%%%%%%%%%%% DATA ANALYSIS %%%%%%%%%%%%%%%%%%%%%%%%
 
-
 def FOV(function, first, last, tol=0.01, value=0.5):
-    """ Calcule the FOV of a function with two minimum values"""
+    """ Calcule the FOV of a function with two minimum values and one maximum"""
     ini = int(first)
     fin = int(last)
 
@@ -303,7 +296,8 @@ def FOV(function, first, last, tol=0.01, value=0.5):
             val = np.append(val, i)
         else:
             pass
-    # Separate range to determine the max un min value in the degree axis
+
+    # Separate range to determine the max and min value in the degree axis
     fov_min = []
     fov_max = []
 
@@ -315,23 +309,57 @@ def FOV(function, first, last, tol=0.01, value=0.5):
 
     fov = np.mean(fov_max) - np.mean(fov_min)
     pos = [np.mean(fov_min), np.mean(fov_max)]
-
     return fov, pos
+
+
+def FOV_smoothing(data, config):
+    """ Smooth the data to find the maximum of the FOV in noisy data"""
+    azim, zen, radiance = select_values(data, config)
+
+    # Set up a regular grid of interpolation point
+    azim_new, zen_new = np.linspace(azim.min(), azim.max(),
+                             num=1000), \
+                 np.linspace(zen.min(), zen.max(), num=1000)
+
+    azim_new, zen_new = np.meshgrid(azim_new, zen_new)
+
+    zi = interpolate.griddata((azim, zen), radiance, (azim_new, zen_new),
+                                    method='linear')
+
+    # plt.contourf(azim_new, zen_new, zi)
+    # plt.show()
+    return azim_new, zen_new, zi
+
+
+def find_centre_fov(data, config):
+    """Find the centre of the FOV. Use a interpolated data to find a smoothed
+    maximum
+    :return: values of the FOV peak (azimuth, zenith)
+    """
+    azim, zen, radiance = select_values(data, config)
+    azim_smth, zen_smth, radiance_smth = FOV_smoothing(data, config)
+    # find max values in array
+    indx = np.where(radiance_smth[..., :] == np.nanmax(radiance_smth[:]))
+    # find index of maximum in smoothed array
+    peak_zen = (indx[0][0] * (zen.max() - zen.min()) / 1000 )
+    peak_azim = (indx[1][0] * (azim.max() - azim.min()) / 1000) + azim.min()
+    tol = 0.25
+    meas_azim, meas_zen = np.where((azim > peak_azim - tol) & (azim < peak_azim + tol)), \
+                          np.where((zen > peak_zen - tol) & (zen < peak_zen + tol))
+
+    return peak_azim, peak_zen
 
 
 def FOV_plot_azim(data, config):
     """Calculate and plot the FOV for the azimuth plane"""
+
     # find the maximum of radiance
-    peak = np.where(data[1][config['channel'], :, :] == data[1][config['channel'], :, :].max())
-    peak_a, peak_z = data[0][peak[1][0]][0], data[0][peak[1][0]][1]
-
-    # look for the angular coordenated
-    print('Maximum of radiance in {:.2f}ºA {:.2f}ºZ '.format(peak_a, peak_z))
-
+    peak_azim, peak_zen = find_centre_fov(data, config)
     # Look for maximum value in the FOV azimuth profile
     ind = []
+    tol = 0.25
     for i in np.arange(len(data[0])):
-        if data[0][i][1] == peak_z:
+        if data[0][i][1] - tol <= peak_zen < data[0][i][1] + tol:
             ind.append(i)
 
     rad_max = data[1][config['channel'], config['wavelength'], ind[0]:ind[-1]] / \
@@ -345,42 +373,51 @@ def FOV_plot_azim(data, config):
     azim = azim[:-1]
 
     # interpolate data
-    rad_az_interp = interp1d(azim, rad_max, kind='cubic')
-    azim_new = sorted(np.linspace(azim[0], azim[-1], num=100))
+    rad_az_interp = interpolate.interp1d(azim, rad_max, kind='cubic')
+    azim_new = sorted(np.linspace(azim.min(), azim.max(), num=100))
 
     # find the values equal to 0.5
     fov_val, ind_f = FOV(rad_az_interp, azim_new[0], azim_new[-1], tol=0.01)
 
+    # smooth the radiance curve
+    sm = savgol_filter(rad_az_interp(azim_new), window_length=21, polyorder=3)
+
+    # FOV maximum found
+    max_fov = (ind_f[0] + ind_f[1]) / 2
+
     # plot data
     fig, ax = plt.subplots()
-    ax.plot(azim, rad_max, 'b*')
+    ax.plot(azim, rad_max, 'b*', label='radiance')
     ax.set_title('Angular Response channel {} azimuth'.format(config['channel']))
     ax.set_xlabel('Azimuth Angle[1]')
     ax.set_ylabel('Normalized Radiance')
-    ax.legend(['FOV={:.2f}º'.format(fov_val)])
+    ax.legend()
     ax.plot([0, 0], [0, 1], 'r--')
-    ax.plot(azim_new, rad_az_interp(azim_new), 'b-')
+    ax.plot([max_fov, max_fov], [0, 1], 'g--')
+    ax.plot(azim_new, rad_az_interp(azim_new), 'b-', label='smooth radiance')
     ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
-
+    ax.plot(azim_new, sm, 'r-')
+    textstr = 'FOV={:.2f}º\nFOV pos={:.2f}º'.format(fov_val, max_fov)
+    # place a text box in upper left in axes coords
+    ax.text(0.75, 0.85, textstr, transform=ax.transAxes, fontsize=10,
+            verticalalignment='top')
     plt.show()
 
 
 def FOV_plot_zen(data, config):
     """Calculate and plot the FOV for the azimuth plane"""
+    zenith=12
     # find the maximum of radiance
-    peak = np.where(data[1][config['channel'], :, :] == data[1][config['channel'], :, :].max())
-    peak_a, peak_z = data[0][peak[1][0]][0], data[0][peak[1][0]][1]
-
-    # look for the angular coordenated
-    print('Maximum of radiance in {:.2f}ºA {:.2f}ºZ '.format(peak_a, peak_z))
+    peak_azim, peak_zen = find_centre_fov(data, config)
 
     # Look for maximum value in the FOV azimuth profile
     ind = []
     tol = 0.25
     for i in np.arange(len(data[0])):
-        if peak_a - tol < data[0][i][0] <= peak_a + tol:
+        if peak_azim - tol < data[0][i][0] <= peak_azim + tol:
             ind.append(i)
 
+    # normalize measured radiance
     rad_max = data[1][config['channel'], config['wavelength'], ind] / \
             data[1][config['channel'], config['wavelength'], ind].max()
 
@@ -391,23 +428,34 @@ def FOV_plot_zen(data, config):
         i += 1
 
     # interpolate data
-    rad_az_interp = interp1d(zen, rad_max, kind='cubic')
-    zen_new = sorted(np.linspace(zen[0], zen[-1], num=100))
+    rad_az_interp = interpolate.interp1d(zen, rad_max, kind='cubic')
+    zen_new = sorted(np.linspace(zen.min(), zen.max(), num=100))
 
     # find the values equal to 0.5
     fov_val, ind_f = FOV(rad_az_interp, zen_new[0], zen_new[-1], tol=0.01)
 
+    # smooth the curve
+    sm = savgol_filter(rad_az_interp(zen_new), window_length=17, polyorder=3)
+
+    # FOV maximum found
+    max_fov = (ind_f[0] + ind_f[1]) / 2
+
     # plot data
     fig, ax = plt.subplots()
-    ax.plot(zen, rad_max, 'b*')
+    ax.plot(zen, rad_max, 'b*', label='radiance')
     ax.set_title('Angular Response channel {} zenith'.format(config['channel']))
     ax.set_xlabel('Zenith Angle[1]')
     ax.set_ylabel('Normalized Radiance')
-    ax.legend(['FOV={:.2f}º'.format(fov_val)])
-    ax.plot([peak_z, peak_z], [0, 1], 'r--')
-    ax.plot(zen_new, rad_az_interp(zen_new), 'b-')
+    ax.legend()
+    ax.plot([zenith, zenith], [0, 1], 'r--')
+    ax.plot([max_fov, max_fov], [0, 1], 'g--')
+    ax.plot(zen_new, rad_az_interp(zen_new), 'b-', label='smooth radiance')
     ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
-
+    ax.plot(zen_new, sm, 'r-')
+    textstr = 'FOV={:.2f}º\nFOV pos={:.2f}º'.format(fov_val, max_fov)
+    # place a text box in upper left in axes coords
+    ax.text(0.75, 0.85, textstr, transform=ax.transAxes, fontsize=10,
+            verticalalignment='top')
     plt.show()
 
 # def save_data(data, config):
