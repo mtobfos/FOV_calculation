@@ -28,31 +28,31 @@ def data_structure(config):
     print('arranging data...')
 
     dark_current = dark(config)
-    
+
     for j in np.arange(len(files_h5)):
         # load a file
         info = loadhdf5file(files_h5[j], key=key)
         dataray[:, :, j] = info[0][key] - dark_current
         print('loading file ', j, 'of ', len(files_h5))
-    
+
     positions = np.load(cwd + '/data/{:03d}/positions/positions.npy'.format(config['channel']))
     data = dataray
-    
-    with h5py.File(cwd + '/data/{:03d}/data.h5'.format(config['channel']), 'w') as dat:           
+
+    with h5py.File(cwd + '/data/{:03d}/data.h5'.format(config['channel']), 'w') as dat:
         if not list(dat.items()):
             dat.create_dataset('/data', data=data, dtype='f4')
             dat.create_dataset('/positions', data=positions, dtype='f4')
         else:
             del dat['data']
-            
+
             dat.create_dataset('/data', data=data, dtype='f4')
             dat.create_dataset('/positions', data=positions, dtype='f4')
             dat['positions'].dims[0].label = 'azimuth, zenith'
             dat['positions'].dims[1].label = 'time'
             dat['data'].dims[0].label = 'channel'
-            dat['data'].dims[1].label = 'wavelength'    
-    
-    print('data saved') 
+            dat['data'].dims[1].label = 'wavelength'
+
+    print('data saved')
 
 
 def loadhdf5file(file_h5, key='data'):
@@ -75,7 +75,7 @@ def loadhdf5file(file_h5, key='data'):
 def files_data_dir(config):
     """Add the raw file directory"""
     return sorted(glob.glob(cwd + '/data/{:03d}/measured_data/*.txt'.format(config['channel'])))
-    
+
 
 def files_pos_dir(config):
     """load path to position files """
@@ -83,7 +83,7 @@ def files_pos_dir(config):
 
 
 def add_align():
-
+    """Add alignment information"""
     alignment = pd.read_table(cwd + '/config/Alignment_Lab_UV_20120822.dat',
                               sep='\s+',
                               names=['Channel Number', 'Azimuth', 'Zenith', 'pixel1', 'pixel2',
@@ -91,7 +91,6 @@ def add_align():
     return alignment
 
 def save2hdf5(files, config, init_file=0, fin_file=3, step=1, expo='700'):
-
     """Function to convert raw data from MUDIS .txt file to hdf5 file with
     attributes.
     Parameters
@@ -149,7 +148,11 @@ def save2hdf5(files, config, init_file=0, fin_file=3, step=1, expo='700'):
             if np.isnan(alignment.iloc[i][3]) == True:
                 data[i] = np.nan
             else:
-                data[i] = fili[:, int(alignment.iloc[i][3] + config['channel_pixel_adj'])]  #
+                try:
+                    data[i] = fili[:, int(alignment.iloc[i][3] + config['channel_pixel_adj'])]  #
+                except:
+                    pass
+
                 # read the pixels index
                 # in the aligment file and copy the
                 # data in the radiance matrix']))
@@ -158,9 +161,9 @@ def save2hdf5(files, config, init_file=0, fin_file=3, step=1, expo='700'):
         name = os.path.split(files[fil])
 
         # Read name of the file (correct time)
-        time = name[1][6:26]
+        time = name[1][6:25]
         # convert time to datetime format
-        time = datetime.datetime.strptime(time, '_%d.%m.%Y_%H_%M_%S')
+        time = datetime.datetime.strptime(time, '%d.%m.%Y_%H_%M_%S')
         # print(time)
         new_name = datetime.datetime.strftime(time, format='%Y%m%d_%H%M%S')
 
@@ -224,8 +227,7 @@ def save2hdf5(files, config, init_file=0, fin_file=3, step=1, expo='700'):
 
     print('Completed')
 
-    
-@jit
+
 def dark(config):
     """Calculate the dark current in the measurements """
 
@@ -254,8 +256,12 @@ def dark(config):
         if np.isnan(alignment.iloc[i][3]) == True:
             dark_current[i] = np.nan
         else:
-            dark_current[i] = dark[:, int(alignment.iloc[i][3]) +
+            try:
+                dark_current[i] = dark[:, int(alignment.iloc[i][3]) +
                                       config['channel_pixel_adj']]
+            except:
+                pass
+
     print('Complete')
 
     return dark_current
@@ -276,11 +282,11 @@ def position_arrange(file, config):
 def read_data(config):
     """Import FOV data saved in HDF5 files. Data must have the structure
     [azimuth, zenith, radiance] """
-    
+
     with h5py.File(cwd + '/data/{:03d}/data.h5'.format(config['channel']), 'r') as dat:
         data = dat['data'][:]
         positions = dat['positions'][:]
-    
+
     return positions, data
 
 
@@ -291,7 +297,7 @@ def select_values(data, positions, config):
     radiance = radianc / radianc.max()
     zen = positions[:, 1]
     azim = positions[:, 0]
-    
+
     # correct azimuth values to normal projection
     azim = (azim - config['meas_azim']) * zen / 90 + config['meas_azim']
 
@@ -303,7 +309,7 @@ def plot_fov(azim, zen, radiance, config, add_points=False):
 
     delta = config['delta']
     name = 'corrected_FOV'
-    
+
     ylim_min = config['meas_zen'] - delta
     ylim_max = config['meas_zen'] + delta
 
@@ -332,6 +338,10 @@ def plot_fov(azim, zen, radiance, config, add_points=False):
         plt.scatter(azim, zen, cmap=cmap, s=0.4, c='w')
         # show centre of FOV
         plt.scatter(config['azimuth_avg'], config['zenith_avg'], cmap=cmap, s=50)
+
+    os.makedirs(
+        os.path.dirname(cwd + '/results/'), exist_ok=True)
+
     plt.savefig('results/{}.png'.format(name), dpi=300)
     plt.show()
     plt.close()
@@ -352,7 +362,7 @@ def plot_surf(data, positions, config, azimuth=0, zenith=30):
     ax.set_zlabel('normalized radiance', fontsize=12)
     plt.gca().invert_yaxis() #invert y axis
     ax.view_init(zenith, azimuth)
-    
+
     ax.scatter(azim, zen, radiance, s=2)
     plt.show()
 
@@ -360,10 +370,10 @@ def plot_surf(data, positions, config, azimuth=0, zenith=30):
 # %%%%%%%%%%%%%%%% DATA ANALYSIS %%%%%%%%%%%%%%%%%%%%%%%%
 
 def FOV(function, first, last, tol=0.01, value=0.5):
-    """ Calcule the FOV of a function with two minimum values and one maximum"""
+    """Calcule the FOV of a function with two minimum values and one maximum"""
     val = []
     num = int((last - first) / tol)
-    
+
     for i in np.linspace(first, last, num=num):
         if (value - tol) <= function(i) <= (value + tol):
             val = np.append(val, i)
@@ -382,7 +392,7 @@ def FOV(function, first, last, tol=0.01, value=0.5):
 
     fov = np.mean(fov_max) - np.mean(fov_min)
     pos = [np.mean(fov_min), np.mean(fov_max)]
-    
+
     return fov, pos
 
 
@@ -399,28 +409,36 @@ def FOV_smoothing(data, positions, config):
 
     zi = interpolate.griddata((azim, zen), radiance, (azim_new, zen_new),
                                     method='cubic')
-    
+
     return azim_new, zen_new, zi
 
 
+# def find_centre_fov(data, positions, config):
+#     """Find the centre of the FOV. Use a interpolated data to find a smoothed
+#     maximum
+#     :return: values of the FOV peak (azimuth, zenith)
+#     """
+#     azim, zen, radiance = select_values(data, positions, config)
+#
+#     azim_smth, zen_smth, radiance_smth = FOV_smoothing(data, positions, config)
+#
+#     # find max values in array
+#     indx = np.where(radiance_smth[..., :] == np.nanmax(radiance_smth[..., :]))
+#
+#     # find index of maximum in smoothed array
+#     peak_zen = (indx[0][0] * (zen.max() - zen.min()) / num_points) + zen.min()
+#     peak_azim = (indx[1][0] * (azim.max() - azim.min()) / num_points) + azim.min()
+#     tol = 0.25
+#     meas_azim, meas_zen = np.where((azim > peak_azim - tol) & (azim < peak_azim + tol)), \
+#                           np.where((zen > peak_zen - tol) & (zen < peak_zen + tol))
+#
+#     return peak_azim, peak_zen
+
 def find_centre_fov(data, positions, config):
-    """Find the centre of the FOV. Use a interpolated data to find a smoothed
-    maximum
-    :return: values of the FOV peak (azimuth, zenith)
-    """
+    """ Find the FOV using the center of mass"""
     azim, zen, radiance = select_values(data, positions, config)
-    
-    azim_smth, zen_smth, radiance_smth = FOV_smoothing(data, positions, config)
-    
-    # find max values in array
-    indx = np.where(radiance_smth[..., :] == np.nanmax(radiance_smth[..., :]))
-    
-    # find index of maximum in smoothed array
-    peak_zen = (indx[0][0] * (zen.max() - zen.min()) / num_points) + zen.min()
-    peak_azim = (indx[1][0] * (azim.max() - azim.min()) / num_points) + azim.min()
-    tol = 0.25
-    meas_azim, meas_zen = np.where((azim > peak_azim - tol) & (azim < peak_azim + tol)), \
-                          np.where((zen > peak_zen - tol) & (zen < peak_zen + tol))
+    peak_azim = (azim * radiance).sum() / radiance.sum()
+    peak_zen = (zen * radiance).sum() / radiance.sum()
 
     return peak_azim, peak_zen
 
@@ -439,9 +457,9 @@ def FOV_plot_azim(data, positions, config, show=True):
     for i in np.arange(len(zen)):
         if (peak_zen - tol) <= zen[i] < (peak_zen + tol):
             indx.append(i)
-        
+
     ind = np.asarray(indx)
-    
+
     # normalize radiance
     rad_max = data[config['channel'], config['wavelength'], ind[0]:ind[-1] + 1] / \
             data[config['channel'], config['wavelength'], ind[0]:ind[-1] + 1].max()
@@ -451,10 +469,10 @@ def FOV_plot_azim(data, positions, config, show=True):
     i = 0
     for val in ind:
         azim[i] = azimuth[val]
-        i += 1 
+        i += 1
     azim = sorted(azim)
     azim = np.asarray(azim, dtype='f4')
-    
+
     # interpolate data
     rad_az_interp = interpolate.interp1d(azim, rad_max, kind='cubic')
     azim_new = sorted(np.linspace(azim[0], azim[-1], num=num_points))
@@ -463,7 +481,7 @@ def FOV_plot_azim(data, positions, config, show=True):
         windows_len = len(radiance) + 1
     else:
         windows_len = len(radiance)
-        
+
     # smooth the radiance curve
     sm = savgol_filter(rad_az_interp(azim_new), window_length=windows_len, polyorder=5)
     sm_inter = interpolate.interp1d(azim_new, sm, kind='cubic')
@@ -502,7 +520,7 @@ def FOV_plot_azim(data, positions, config, show=True):
 
 def FOV_plot_zen(data, positions, config, show=True):
     """Calculate and plot the FOV for the azimuth plane"""
-    
+
     # find the maximum of radiance
     peak_azim, peak_zen = find_centre_fov(data, positions, config)
 
@@ -510,7 +528,7 @@ def FOV_plot_zen(data, positions, config, show=True):
     # Look for maximum value in the FOV azimuth profile
     indx = []
     tol = 0.1
-    
+
     for i in np.arange(len(azimuth)):
         if (peak_azim - tol) <= azimuth[i] < (peak_azim + tol):
             indx.append(i)
@@ -530,12 +548,12 @@ def FOV_plot_zen(data, positions, config, show=True):
     # interpolate data
     rad_az_interp = interpolate.interp1d(zen, rad_max, kind='cubic') # interp1d
     zen_new = sorted(np.linspace(zen[0], zen[-1], num=num_points))
-    
+
     if len(radiance) % 2 == 0:
         windows_len = len(radiance) + 1
     else:
         windows_len = len(radiance)
-        
+
     # smooth the curve
     sm = savgol_filter(rad_az_interp(zen_new), window_length=windows_len, polyorder=3)
     sm_inter = interpolate.interp1d(zen_new, sm, kind='cubic')
@@ -575,7 +593,7 @@ def FOV_plot_zen(data, positions, config, show=True):
 
 
 def FOV_avg(data, positions, config, init_wave=400, end_wave=500, step=50, axis='azimuth', show=False):
-    """ Find the average FOV point"""
+    """ Find the averaged FOV point"""
 
     results = []
 
