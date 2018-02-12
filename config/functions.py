@@ -9,9 +9,15 @@ import pandas as pd
 from scipy.signal import savgol_filter
 from scipy import interpolate
 from numba import jit
+import pickle
 
 cwd = os.getcwd()
 num_points = 2500 # points for interpolation
+
+def save_configuration(config):
+    with open('config/configuration.pickle', 'wb') as f:
+        pickle.dump(config, f, pickle.HIGHEST_PROTOCOL)
+
 
 def data_structure(config):
     """ Arrange the data into a common data structure for the analysis
@@ -299,7 +305,7 @@ def select_values(data, positions, config):
     azim = positions[:, 0]
 
     # correct azimuth values to normal projection
-    azim = (azim - config['meas_azim']) * zen / 90 + config['meas_azim']
+    azim = (azim - config['meas_azim']) * zen / 90  + config['meas_azim']
 
     return azim, zen, radiance
 
@@ -370,7 +376,7 @@ def plot_surf(data, positions, config, azimuth=0, zenith=30):
 # %%%%%%%%%%%%%%%% DATA ANALYSIS %%%%%%%%%%%%%%%%%%%%%%%%
 
 def FOV(function, first, last, tol=0.01, value=0.5):
-    """Calcule the FOV of a function with two minimum values and one maximum"""
+    """ Calcule the FOV of a function with two minimum values and one maximum"""
     val = []
     num = int((last - first) / tol)
 
@@ -593,7 +599,7 @@ def FOV_plot_zen(data, positions, config, show=True):
 
 
 def FOV_avg(data, positions, config, init_wave=400, end_wave=500, step=50, axis='azimuth', show=False):
-    """ Find the averaged FOV point"""
+    """ Find the average FOV point"""
 
     results = []
 
