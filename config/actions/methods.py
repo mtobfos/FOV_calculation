@@ -357,7 +357,7 @@ def position_arrange(file, config):
     print(position)
 
 
-def read_data(config):
+def read_data(config, cwd):
     """Import FOV data saved in HDF5 files. Data must have the structure
     [azimuth, zenith, radiance] """
 
@@ -491,27 +491,6 @@ def FOV_smoothing(data, positions, config):
     return azim_new, zen_new, zi
 
 
-# def find_centre_fov(data, positions, config):
-#     """Find the centre of the FOV. Use a interpolated data to find a smoothed
-#     maximum
-#     :return: values of the FOV peak (azimuth, zenith)
-#     """
-#     azim, zen, radiance = select_values(data, positions, config)
-#
-#     azim_smth, zen_smth, radiance_smth = FOV_smoothing(data, positions, config)
-#
-#     # find max values in array
-#     indx = np.where(radiance_smth[..., :] == np.nanmax(radiance_smth[..., :]))
-#
-#     # find index of maximum in smoothed array
-#     peak_zen = (indx[0][0] * (zen.max() - zen.min()) / num_points) + zen.min()
-#     peak_azim = (indx[1][0] * (azim.max() - azim.min()) / num_points) + azim.min()
-#     tol = 0.25
-#     meas_azim, meas_zen = np.where((azim > peak_azim - tol) & (azim < peak_azim + tol)), \
-#                           np.where((zen > peak_zen - tol) & (zen < peak_zen + tol))
-#
-#     return peak_azim, peak_zen
-
 def find_centre_fov(data, positions, config):
     """ Find the FOV using the center of mass"""
     azim, zen, radiance = select_values(data, positions, config)
@@ -568,22 +547,25 @@ def FOV_plot_azim(data, positions, config, show=True):
     fov_val, ind_f = FOV(sm_inter, azim_new[0], azim_new[-1], tol=0.01)
 
     # FOV maximum found
-    max_fov = (ind_f[0] + ind_f[1]) / 2
+    max_fov = ((ind_f[0] + ind_f[1]) / 2)
 
     # plot data
     title = 'Angular Response channel {} azimuth, {}nm'.format(config['channel'], config['wavelength'])
     fig, ax = plt.subplots()
-    ax.plot(azim, rad_max, 'b*', label='radiance')
+    ax.plot(azim, rad_max, 'b*-', label='radiance')
     ax.set_title(title)
     ax.set_xlabel('Azimuth Angle[1]')
     ax.set_ylabel('Normalized Radiance')
-    ax.legend()
+
     ax.plot([config['meas_azim'], config['meas_azim']], [0, 1], 'r--')
     ax.plot([max_fov, max_fov], [0, 1], 'g--')
-    ax.plot(azim_new, rad_az_interp(azim_new), 'b-', label='smooth radiance')
+    #ax.plot(azim_new, rad_az_interp(azim_new), 'b-', label='smooth radiance')
     ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
-    ax.plot(azim_new, sm, 'r-')
-    textstr = 'FOV={:.2f}º\nFOV pos={:.2f}º'.format(fov_val, max_fov)
+    ax.plot(azim_new, sm, 'r-', label='smoothing')
+    ax.legend()
+    textstr = 'FOV={:.2f}º\nFOV pos={:.2f}°\nDeviation={:.2f}°'.format(fov_val,
+                                                    max_fov,
+                                                    max_fov - config['meas_azim'])
     # place a text box in upper left in axes coords
     ax.text(0.75, 0.85, textstr, transform=ax.transAxes, fontsize=10,
             verticalalignment='top')
@@ -591,6 +573,7 @@ def FOV_plot_azim(data, positions, config, show=True):
 
     if show == True:
         plt.show()
+        plt.close()
     else:
         plt.close()
 
@@ -645,18 +628,21 @@ def FOV_plot_zen(data, positions, config, show=True):
     # plot data
     title = 'Angular Response channel {} zenith, {}nm'.format(config['channel'], config['wavelength'])
     fig, ax = plt.subplots()
-    ax.plot(zen, rad_max, 'b*', label='radiance')
+    ax.plot(zen, rad_max, 'b*-', label='radiance')
     ax.set_title(title)
     ax.set_xlabel('Zenith Angle[1]')
     ax.set_ylabel('Normalized Radiance')
-    ax.legend()
     ax.plot([config['meas_zen'], config['meas_zen']], [0, 1], 'r--')
     ax.plot([max_fov, max_fov], [0, 1], 'g--')
-    ax.plot(zen_new, rad_az_interp(zen_new), 'b-', label='smooth radiance')
+    #ax.plot(zen_new, rad_az_interp(zen_new), 'b-', label='smooth radiance')
     ax.plot([ind_f[0], ind_f[1]], [0.5, 0.5])
-    ax.plot(zen_new, sm, 'r-')
+    ax.plot(zen_new, sm, 'r-', label='smoothing')
     ax.axis([config['meas_zen'] - config['delta'], config['meas_zen'] + config['delta'], 0, 1.1])
-    textstr = 'FOV={:.2f}º\nFOV pos={:.2f}º'.format(fov_val, max_fov)
+    ax.legend()
+    textstr = 'FOV={:.2f}º\nFOV pos={:.2f}°\nDeviation={:.2f}°'.format(
+        fov_val,
+        max_fov,
+        max_fov - config['meas_zen'])
     # place a text box in upper left in axes coords
     ax.text(0.75, 0.85, textstr, transform=ax.transAxes, fontsize=10,
             verticalalignment='top')
@@ -664,6 +650,7 @@ def FOV_plot_zen(data, positions, config, show=True):
 
     if show == True:
         plt.show()
+        plt.close()
     else:
         plt.close()
 
@@ -709,3 +696,4 @@ def FOV_avg(data, positions, config, init_wave=400, end_wave=500, step=50, axis=
     ax2.tick_params('y', colors='r')
 
     plt.show()
+    plt.close()
